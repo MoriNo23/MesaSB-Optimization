@@ -63,17 +63,61 @@ sudo e2fsck -yf vendor.img
 sudo resize2fs vendor.img
 ```
 
----
+-----
 
-## 5. Low-Level Kernel Tuning
-Beyond the driver, we patched the kernel parameters to remove security overhead (Spectre/Meltdown mitigations) which is particularly heavy on Sandy Bridge CPUs.
 
-### Grub Configuration (`/etc/default/grub`)
+
+## 5\. Low-Level Kernel Tuning (Performance vs. Security)
+
+
+
+To maximize performance on legacy hardware (e.g., Intel Sandy Bridge), certain kernel parameters can be tuned. This is particularly effective for reclaiming CPU cycles lost to security patches on older architectures.
+
+
+
+> [\!CAUTION]
+
+> **SECURITY WARNING:** The `mitigations=off` flag disables protections against speculative execution vulnerabilities (Spectre, Meltdown, etc.). While this can improve CPU performance by **10-25%** on older generations, it leaves the system vulnerable to data-leakage attacks via malicious software or browser scripts. **Use at your own risk.**
+
+
+
+### Configuration
+
+
+
+Edit your `/etc/default/grub` file and modify the `GRUB_CMDLINE_LINUX_DEFAULT` line:
+
+
+
 ```bash
+
+# Option A: Maximum Performance (Less Secure)
+
 GRUB_CMDLINE_LINUX_DEFAULT="quiet enable_fbc=1 mitigations=off"
+
+
+
+# Option B: Balanced/Standard (Secure)
+
+# GRUB_CMDLINE_LINUX_DEFAULT="quiet enable_fbc=1"
+
 ```
 
----
+
+
+**Parameters Explained:**
+
+
+
+  * **`enable_fbc=1`**: Enables Intel Frame Buffer Compression to save power (may cause flickering on some panels).
+
+  * **`mitigations=off`**: Disables hardware vulnerability mitigations to recover CPU overhead.
+
+  * **`quiet`**: Suppresses kernel log messages during boot for a cleaner UI.
+
+
+
+-----
 
 ## 7. Benchmarking & Real-World Results
 To measure the impact of these optimizations, we use **glmark2**. This tool provides a consistent baseline for OpenGL performance on Linux.
