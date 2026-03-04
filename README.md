@@ -13,7 +13,6 @@ We transformed a non-functional black-screen experience into a smooth environmen
 
 ## 1. The Core: Compiling "MesaSB" (Mesa 26.1.0-devel)
 Standard Mesa builds use generic x86_64 instructions. By compiling specifically for the **AVX1** instruction set of Sandy Bridge, we maximize CPU throughput for this exact chip. This build, which we've named **MesaSB**, is our primary driver for Waydroid.
-Standard Mesa builds use generic x86_64 instructions. By compiling specifically for the **AVX1** instruction set of Sandy Bridge, we maximize CPU throughput for this exact chip.
 
 ### Build Configuration
 We stripped Mesa of all "dead weight" (drivers for AMD, NVIDIA, etc.) to keep the binary small enough to fit better into the CPU's 3MB SmartCache.
@@ -116,9 +115,21 @@ These adjustments were fine-tuned for my **i5-2430M**. If you have deeper knowle
 
 ## 1. 核心：编译 "MesaSB" (Mesa 26.1.0-devel)
 标准的 Mesa 构建使用通用的指令集。通过针对 Sandy Bridge 的 **AVX1** 指令集进行专门编译，我们最大化了该芯片的 CPU 吞吐量。我们将这个专门优化的版本命名为 **MesaSB**，作为 Waydroid 的主驱动程序。
-标准的 Mesa 构建使用通用的指令集。通过针对 Sandy Bridge 的 **AVX1** 指令集进行专门编译，我们最大化了该芯片的 CPU 吞吐量。
 
 ### 构建配置
+我们剔除了所有冗余驱动，以确保二进制文件足够小，能更好地利用 CPU 的 3MB 智能缓存。
+
+```bash
+# 针对 i5-2430M 的优化 Meson 配置
+meson setup build_pro/ --buildtype=release \
+  -Doptimization=3 -Db_lto=false \
+  -Dcpp_args="-march=sandybridge -ffast-math -O3" \
+  -Dc_args="-march=sandybridge -ffast-math -O3" \
+  -Dgallium-drivers=crocus,llvmpipe,zink \
+  -Dvulkan-drivers=swrast \
+  -Dgallium-rusticl=true -Dshader-cache=enabled \
+  -Dintel-elk=true -Ddraw-use-llvm=true
+```
 我们剔除了所有冗余驱动，以确保二进制文件足够小，能更好地利用 CPU 的 3MB 智能缓存。
 
 ---
@@ -126,11 +137,22 @@ These adjustments were fine-tuned for my **i5-2430M**. If you have deeper knowle
 ## 2. GPU 伪装 (Spoofing)：欺骗现代引擎
 现代游戏如果检测到“CPU 渲染器”，通常会加载低质量资产或直接崩溃。我们将 **MesaSB** 中的 **Lavapipe** 伪装成了 **独立显卡 (Discrete GPU)**。
 
+### 身份修补 (lvp_device.c)
+```python
+# 用于应用伪装的 Python 脚本片段
+path = "src/gallium/frontends/lavapipe/lvp_device.c"
+with open(path, "r") as f:
+    content = f.read()
+new_content = content.replace("VK_PHYSICAL_DEVICE_TYPE_CPU", "VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU")
+with open(path, "w") as f:
+    f.write(new_content)
+```
+现代游戏如果检测到“CPU 渲染器”，通常会加载低质量资产或直接崩溃。我们将 **MesaSB** 中的 **Lavapipe** 伪装成了 **独立显卡 (Discrete GPU)**。
+
 ---
 
 ## 3. 桥接：针对 Waydroid 的链接器中间件 (Shims)
 Waydroid 的 x86_64 环境通常缺少自定义 Vulkan 驱动所需的 Android 内部符号。我们实现了一个链接器中间件（灵感来自 SwiftShader 的构建系统）来为 **MesaSB** 解决这些依赖关系，避免了架构冲突。
-我们实现了一个链接器中间件来解决 Android 内部符号缺失的问题，避免了与系统库的架构冲突。
 
 ---
 
