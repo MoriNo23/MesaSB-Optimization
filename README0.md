@@ -17,17 +17,68 @@ Standard Mesa builds use generic x86_64 instructions. By compiling specifically 
 ### Build Configuration
 We stripped Mesa of all "dead weight" (drivers for AMD, NVIDIA, etc.) to keep the binary small enough to fit better into the CPU's 3MB SmartCache.
 
+> [!WARNING]
+> **RAM Requirements:** The configuration below is for systems with **8GB+ RAM**. If you have **4GB or less**, see the [Low-RAM Configuration](#low-ram-configuration-4gb-or-less) section below.
+
 ```bash
-# Optimized Meson Setup for i5-2430M
+# Optimized Meson Setup for i5-2430M (8GB+ RAM recommended)
 meson setup build_pro/ --buildtype=release \
-  -Doptimization=3 -Db_lto=false \
-  -Dcpp_args="-march=sandybridge -ffast-math -O3" \
-  -Dc_args="-march=sandybridge -ffast-math -O3" \
-  -Dgallium-drivers=crocus,llvmpipe,zink \
-  -Dvulkan-drivers=swrast \
-  -Dgallium-rusticl=true -Dshader-cache=enabled \
-  -Dintel-elk=true -Ddraw-use-llvm=true
+ -Doptimization=3 -Db_lto=false \
+ -Dcpp_args="-march=sandybridge -ffast-math -O3" \
+ -Dc_args="-march=sandybridge -ffast-math -O3" \
+ -Dgallium-drivers=crocus,llvmpipe,zink \
+ -Dvulkan-drivers=swrast \
+ -Dgallium-rusticl=true -Dshader-cache=enabled \
+ -Dintel-elk=true -Ddraw-use-llvm=true
 ```
+
+### Runtime Impact: Feature vs RAM Trade-offs
+
+> [!IMPORTANT]
+> The table below describes **runtime memory usage**, not compilation. These features consume RAM while the driver is running.
+
+| Feature | What it does | Runtime RAM Impact | Low-RAM Recommendation |
+|---------|--------------|-------------------|------------------------|
+| `llvmpipe` driver | Software Vulkan renderer (CPU) | **High** - Uses 200-500MB when active | Remove for GPU-only setups |
+| `zink` driver | OpenGL over Vulkan | **Medium** - ~100MB overhead | Keep if using Vulkan apps |
+| `crocus` driver | Hardware driver for Gen6 | **Low** - Minimal overhead | **Always keep** |
+| `rusticl` (OpenCL) | Rust-based OpenCL 3.0 runtime | **Very High** - 300-800MB when active | **Disable for <4GB RAM** |
+| `intel-elk` | New Intel shader compiler | Low-Medium runtime overhead | OK for 4GB+, disable for less |
+| `draw-use-llvm` | LLVM-based vertex processing | Medium - JIT compilation memory | Disable for very low RAM |
+| `shader-cache` | Caches compiled shaders on disk | Low runtime, improves reload speed | **Keep enabled** |
+
+### Why These Matter for Low-RAM Systems
+
+**Rusticl (OpenCL):** When enabled, Rusticl loads the entire Rust runtime and LLVM JIT. On a 3.7GB system, this can consume 20-30% of available RAM when an app requests OpenCL. For Waydroid gaming, OpenCL is rarely needed.
+
+**llvmpipe:** While useful as a software fallback, having it loaded alongside hardware drivers adds memory pressure. If your GPU works correctly with `crocus`, you don't need `llvmpipe`.
+
+**intel-elk + draw-use-llvm:** These enable advanced shader compilation features. On sub-4GB systems, the JIT compilation overhead can cause stuttering when new shaders are encountered.
+
+### Low-RAM Configuration (4GB or less)
+
+For systems with limited RAM (like the target 3.7GB Sandy Bridge laptop), use this **stripped-down config** that minimizes runtime memory usage:
+
+```bash
+# Low-RAM Runtime-Optimized Setup (for 4GB or less)
+meson setup build/ --buildtype=release \
+ -Doptimization=2 -Db_lto=false \
+ -Dc_args="-march=sandybridge -mtune=sandybridge -O2" \
+ -Dcpp_args="-march=sandybridge -mtune=sandybridge -O2" \
+ -Dgallium-drivers=crocus \
+ -Dvulkan-drivers=swrast \
+ -Dplatforms=wayland,x11 \
+ -Dshader-cache=enabled
+```
+
+**What was removed for low-RAM runtime:**
+- Removed `llvmpipe` and `zink` - Single hardware driver only
+- Removed `rusticl` - No OpenCL runtime overhead
+- Removed `intel-elk` and `draw-use-llvm` - Simpler shader pipeline
+- `-O2` instead of `-O3` - More stable on constrained systems
+
+> [!TIP]
+> If you still experience stuttering, you can disable shader cache temporarily: `MESA_SHADER_CACHE_DISABLE=1 waydroid show-full-ui`
 
 ---
 
@@ -39,10 +90,10 @@ Modern games check `VkPhysicalDeviceProperties`. If they see a "CPU Renderer", t
 # Python snippet to apply the spoofing
 path = "src/gallium/frontends/lavapipe/lvp_device.c"
 with open(path, "r") as f:
-    content = f.read()
+ content = f.read()
 new_content = content.replace("VK_PHYSICAL_DEVICE_TYPE_CPU", "VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU")
 with open(path, "w") as f:
-    f.write(new_content)
+ f.write(new_content)
 ```
 
 ---
@@ -109,11 +160,11 @@ GRUB_CMDLINE_LINUX_DEFAULT="quiet enable_fbc=1 mitigations=off"
 
 
 
-  * **`enable_fbc=1`**: Enables Intel Frame Buffer Compression to save power (may cause flickering on some panels).
+ * **`enable_fbc=1`**: Enables Intel Frame Buffer Compression to save power (may cause flickering on some panels).
 
-  * **`mitigations=off`**: Disables hardware vulnerability mitigations to recover CPU overhead.
+ * **`mitigations=off`**: Disables hardware vulnerability mitigations to recover CPU overhead.
 
-  * **`quiet`**: Suppresses kernel log messages during boot for a cleaner UI.
+ * **`quiet`**: Suppresses kernel log messages during boot for a cleaner UI.
 
 
 
@@ -166,32 +217,48 @@ These adjustments were fine-tuned for my **i5-2430M**. If you have deeper knowle
 ```bash
 # 针对 i5-2430M 的优化 Meson 配置
 meson setup build_pro/ --buildtype=release \
-  -Doptimization=3 -Db_lto=false \
-  -Dcpp_args="-march=sandybridge -ffast-math -O3" \
-  -Dc_args="-march=sandybridge -ffast-math -O3" \
-  -Dgallium-drivers=crocus,llvmpipe,zink \
-  -Dvulkan-drivers=swrast \
-  -Dgallium-rusticl=true -Dshader-cache=enabled \
-  -Dintel-elk=true -Ddraw-use-llvm=true
+ -Doptimization=3 -Db_lto=false \
+ -Dcpp_args="-march=sandybridge -ffast-math -O3" \
+ -Dc_args="-march=sandybridge -ffast-math -O3" \
+ -Dgallium-drivers=crocus,llvmpipe,zink \
+ -Dvulkan-drivers=swrast \
+ -Dgallium-rusticl=true -Dshader-cache=enabled \
+ -Dintel-elk=true -Ddraw-use-llvm=true
 ```
+
+### 运行时影响：功能与 RAM 权衡
+
+> [!重要]
+> 下表描述的是**运行时内存使用**，而非编译。这些功能在驱动运行时会消耗 RAM。
+
+| 功能 | 作用 | 运行时 RAM 影响 | 低 RAM 推荐 |
+|------|------|----------------|-------------|
+| `llvmpipe` 驱动 | 软件 Vulkan 渲染器 (CPU) | **高** - 激活时使用 200-500MB | 仅 GPU 设置时移除 |
+| `zink` 驱动 | OpenGL over Vulkan | **中** - ~100MB 开销 | 使用 Vulkan 应用时保留 |
+| `crocus` 驱动 | Gen6 硬件驱动 | **低** - 最小开销 | **始终保留** |
+| `rusticl` (OpenCL) | 基于 Rust 的 OpenCL 3.0 运行时 | **极高** - 激活时 300-800MB | **<4GB RAM 时禁用** |
+| `intel-elk` | 新 Intel 着色器编译器 | 低-中运行时开销 | 4GB+ 可用，更低则禁用 |
+| `draw-use-llvm` | 基于 LLVM 的顶点处理 | 中 - JIT 编译内存 | 极低 RAM 时禁用 |
+| `shader-cache` | 在磁盘缓存编译的着色器 | 低运行时，加快重载速度 | **保持启用** |
+
 我们剔除了所有冗余驱动，以确保二进制文件足够小，能更好地利用 CPU 的 3MB 智能缓存。
 
 ---
 
 ## 2. GPU 伪装 (Spoofing)：欺骗现代引擎
-现代游戏如果检测到“CPU 渲染器”，通常会加载低质量资产或直接崩溃。我们将 **Mesa** 中的 **Lavapipe** 伪装成了 **独立显卡 (Discrete GPU)**。
+现代游戏如果检测到"CPU 渲染器"，通常会加载低质量资产或直接崩溃。我们将 **Mesa** 中的 **Lavapipe** 伪装成了 **独立显卡 (Discrete GPU)**。
 
 ### 身份修补 (lvp_device.c)
 ```python
 # 用于应用伪装的 Python 脚本片段
 path = "src/gallium/frontends/lavapipe/lvp_device.c"
 with open(path, "r") as f:
-    content = f.read()
+ content = f.read()
 new_content = content.replace("VK_PHYSICAL_DEVICE_TYPE_CPU", "VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU")
 with open(path, "w") as f:
-    f.write(new_content)
+ f.write(new_content)
 ```
-现代游戏如果检测到“CPU 渲染器”，通常会加载低质量资产或直接崩溃。我们将 **Mesa** 中的 **Lavapipe** 伪装成了 **独立显卡 (Discrete GPU)**。
+现代游戏如果检测到"CPU 渲染器"，通常会加载低质量资产或直接崩溃。我们将 **Mesa** 中的 **Lavapipe** 伪装成了 **独立显卡 (Discrete GPU)**。
 
 ---
 
@@ -230,4 +297,3 @@ glmark2 --fullscreen >> performance_results.log
 | **Mesa (Mesa 26.1-devel)** | **880** | **+58.5%** |
 
 *注意：在复杂的 3D 场景（Unity 游戏）中，相对于 SwiftShader 软件渲染，感官速度提升达到了 300%。*
-
